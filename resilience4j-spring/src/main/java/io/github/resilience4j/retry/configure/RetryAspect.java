@@ -16,6 +16,12 @@
 package io.github.resilience4j.retry.configure;
 
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -24,64 +30,109 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
+import org.springframework.util.StringUtils;
 
+import io.github.resilience4j.core.lang.Nullable;
+import io.github.resilience4j.fallback.FallbackDecorators;
+import io.github.resilience4j.fallback.FallbackMethod;
 import io.github.resilience4j.retry.RetryRegistry;
-import io.github.resilience4j.retry.annotation.AsyncRetry;
 import io.github.resilience4j.retry.annotation.Retry;
-import io.vavr.CheckedFunction0;
+import io.github.resilience4j.utils.AnnotationExtractor;
 
 /**
  * This Spring AOP aspect intercepts all methods which are annotated with a {@link Retry} annotation.
- * The aspect protects an annotated method with a Retry. The RetryRegistry is used to retrieve an instance of a Retry for
- * a specific name.
+ * The aspect will handle methods that return a RxJava2 reactive type, Spring Reactor reactive type, CompletionStage type, or value type.
+ *
+ * The RetryRegistry is used to retrieve an instance of a Retry for a specific name.
+ *
+ * Given a method like this:
+ * <pre><code>
+ *     {@literal @}Retry(name = "myService")
+ *     public String fancyName(String name) {
+ *         return "Sir Captain " + name;
+ *     }
+ * </code></pre>
+ * each time the {@code #fancyName(String)} method is invoked, the method's execution will pass through a
+ * a {@link io.github.resilience4j.retry.Retry} according to the given config.
+ *
+ * The fallbackMethod parameter signature must match either:
+ *
+ * 1) The method parameter signature on the annotated method or
+ * 2) The method parameter signature with a matching exception type as the last parameter on the annotated method
  */
 @Aspect
 public class RetryAspect implements Ordered {
 
 	private static final Logger logger = LoggerFactory.getLogger(RetryAspect.class);
-
+	private final static ScheduledExecutorService retryExecutorService = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors());
 	private final RetryConfigurationProperties retryConfigurationProperties;
 	private final RetryRegistry retryRegistry;
+	private final @Nullable List<RetryAspectExt> retryAspectExtList;
+	private final FallbackDecorators fallbackDecorators;
 
 	/**
 	 * @param retryConfigurationProperties spring retry config properties
 	 * @param retryRegistry                retry definition registry
+	 * @param retryAspectExtList a list of retry aspect extensions
+	 * @param fallbackDecorators  the fallback decorators
 	 */
-	public RetryAspect(RetryConfigurationProperties retryConfigurationProperties, RetryRegistry retryRegistry) {
+	public RetryAspect(RetryConfigurationProperties retryConfigurationProperties, RetryRegistry retryRegistry, @Autowired(required = false) List<RetryAspectExt> retryAspectExtList, FallbackDecorators fallbackDecorators) {
 		this.retryConfigurationProperties = retryConfigurationProperties;
 		this.retryRegistry = retryRegistry;
+		this.retryAspectExtList = retryAspectExtList;
+		this.fallbackDecorators = fallbackDecorators;
+		cleanup();
+
 	}
 
 	@Pointcut(value = "@within(retry) || @annotation(retry)", argNames = "retry")
 	public void matchAnnotatedClassOrMethod(Retry retry) {
 	}
 
-	@Around(value = "matchAnnotatedClassOrMethod(backendMonitored)", argNames = "proceedingJoinPoint, backendMonitored")
-	public Object retryAroundAdvice(ProceedingJoinPoint proceedingJoinPoint, Retry backendMonitored) throws Throwable {
+	@Around(value = "matchAnnotatedClassOrMethod(retryAnnotation)", argNames = "proceedingJoinPoint, retryAnnotation")
+	public Object retryAroundAdvice(ProceedingJoinPoint proceedingJoinPoint, @Nullable Retry retryAnnotation) throws Throwable {
 		Method method = ((MethodSignature) proceedingJoinPoint.getSignature()).getMethod();
-		if (method.getAnnotation(AsyncRetry.class) != null || method.getDeclaredAnnotation(AsyncRetry.class) != null) {
-			throw new IllegalStateException("You mix AsyncRetry and Retry annotations in not right way ," +
-					" you can use one of them class level and the other one method level in the same class," +
-					" if yon want to use both please use them ONLY method level and remove the class level usage   ");
-		}
 		String methodName = method.getDeclaringClass().getName() + "#" + method.getName();
-		if (backendMonitored == null) {
-			backendMonitored = getBackendMonitoredAnnotation(proceedingJoinPoint);
+		if (retryAnnotation == null) {
+			retryAnnotation = getRetryAnnotation(proceedingJoinPoint);
 		}
-		String backend = backendMonitored.name();
+		if(retryAnnotation == null) { //because annotations wasn't found
+			return proceedingJoinPoint.proceed();
+		}
+		String backend = retryAnnotation.name();
 		io.github.resilience4j.retry.Retry retry = getOrCreateRetry(methodName, backend);
-		return handleJoinPoint(proceedingJoinPoint, retry, methodName);
+		Class<?> returnType = method.getReturnType();
+
+		if (StringUtils.isEmpty(retryAnnotation.fallbackMethod())) {
+			return proceed(proceedingJoinPoint, methodName, retry, returnType);
+		}
+		FallbackMethod fallbackMethod = FallbackMethod.create(retryAnnotation.fallbackMethod(), method, proceedingJoinPoint.getArgs(), proceedingJoinPoint.getTarget());
+		return fallbackDecorators.decorate(fallbackMethod, () -> proceed(proceedingJoinPoint, methodName, retry, returnType)).apply();
+	}
+
+	private Object proceed(ProceedingJoinPoint proceedingJoinPoint, String methodName, io.github.resilience4j.retry.Retry retry, Class<?> returnType) throws Throwable {
+		if (CompletionStage.class.isAssignableFrom(returnType)) {
+			return handleJoinPointCompletableFuture(proceedingJoinPoint, retry);
+		}
+		if (retryAspectExtList != null && !retryAspectExtList.isEmpty()) {
+			for (RetryAspectExt retryAspectExt : retryAspectExtList) {
+				if (retryAspectExt.canHandleReturnType(returnType)) {
+					return retryAspectExt.handle(proceedingJoinPoint, retry, methodName);
+				}
+			}
+		}
+		return handleDefaultJoinPoint(proceedingJoinPoint, retry);
 	}
 
 	/**
 	 * @param methodName the retry method name
-	 * @param backend the retry backend name
+	 * @param backend    the retry backend name
 	 * @return the configured retry
 	 */
 	private io.github.resilience4j.retry.Retry getOrCreateRetry(String methodName, String backend) {
-		io.github.resilience4j.retry.Retry retry = retryRegistry.retry(backend,
-				() -> retryConfigurationProperties.createRetryConfig(backend));
+		io.github.resilience4j.retry.Retry retry = retryRegistry.retry(backend);
 
 		if (logger.isDebugEnabled()) {
 			logger.debug("Created or retrieved retry '{}' with max attempts rate '{}'  for method: '{}'",
@@ -94,45 +145,57 @@ public class RetryAspect implements Ordered {
 	 * @param proceedingJoinPoint the aspect joint point
 	 * @return the retry annotation
 	 */
-	private Retry getBackendMonitoredAnnotation(ProceedingJoinPoint proceedingJoinPoint) {
-		if (logger.isDebugEnabled()) {
-			logger.debug("circuitBreaker parameter is null");
-		}
-		Retry retry = null;
-		Class<?> targetClass = proceedingJoinPoint.getTarget().getClass();
-		if (targetClass.getDeclaredAnnotation(AsyncRetry.class) != null || targetClass.getAnnotation(AsyncRetry.class) != null) {
-			throw new IllegalStateException("You can not have AsyncRetry and Retry annotation both defined on class level, please use only one of them ");
-		}
-		if (targetClass.isAnnotationPresent(Retry.class)) {
-			retry = targetClass.getAnnotation(Retry.class);
-			if (retry == null && logger.isDebugEnabled()) {
-				logger.debug("TargetClass has no annotation 'Retry'");
-				retry = targetClass.getDeclaredAnnotation(Retry.class);
-				if (retry == null && logger.isDebugEnabled()) {
-					logger.debug("TargetClass has no declared annotation 'Retry'");
-				}
-			}
-		}
-		return retry;
+	@Nullable
+	private Retry getRetryAnnotation(ProceedingJoinPoint proceedingJoinPoint) {
+		return AnnotationExtractor.extract(proceedingJoinPoint.getTarget().getClass(), Retry.class);
 	}
 
 	/**
 	 * @param proceedingJoinPoint the AOP logic joint point
-	 * @param retry the configured retry
-	 * @param methodName the retry method name
+	 * @param retry               the configured sync retry
 	 * @return the result object if any
 	 * @throws Throwable
 	 */
-	private Object handleJoinPoint(ProceedingJoinPoint proceedingJoinPoint, io.github.resilience4j.retry.Retry retry, String methodName) throws Throwable {
-		if (logger.isDebugEnabled()) {
-			logger.debug("retry invocation of method {} ", methodName);
-		}
-		final CheckedFunction0<Object> objectCheckedFunction0 = io.github.resilience4j.retry.Retry.decorateCheckedSupplier(retry, proceedingJoinPoint::proceed);
-		return objectCheckedFunction0.apply();
+	private Object handleDefaultJoinPoint(ProceedingJoinPoint proceedingJoinPoint, io.github.resilience4j.retry.Retry retry) throws Throwable {
+		return retry.executeCheckedSupplier(proceedingJoinPoint::proceed);
 	}
+
+	/**
+	 * @param proceedingJoinPoint the AOP logic joint point
+	 * @param retry               the configured async retry
+	 * @return the result object if any
+	 */
+	@SuppressWarnings("unchecked")
+	private Object handleJoinPointCompletableFuture(ProceedingJoinPoint proceedingJoinPoint, io.github.resilience4j.retry.Retry retry) {
+		return retry.executeCompletionStage(retryExecutorService, () -> {
+			try {
+				return (CompletionStage<Object>) proceedingJoinPoint.proceed();
+			} catch (Throwable throwable) {
+				throw new CompletionException(throwable);
+			}
+		});
+	}
+
 
 	@Override
 	public int getOrder() {
 		return retryConfigurationProperties.getRetryAspectOrder();
 	}
+
+	private void cleanup() {
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			retryExecutorService.shutdown();
+			try {
+				if (!retryExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
+					retryExecutorService.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				if (!retryExecutorService.isTerminated()) {
+					retryExecutorService.shutdownNow();
+				}
+				Thread.currentThread().interrupt();
+			}
+		}));
+	}
+
 }

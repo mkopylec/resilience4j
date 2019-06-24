@@ -21,6 +21,11 @@ import java.util.List;
 
 /** Common constants for metric binder implementations based on tags. */
 public final class LabelNames {
+
+    private LabelNames() {}
+
     public static final List<String> NAME = Collections.singletonList("name");
     public static final List<String> NAME_AND_KIND = Arrays.asList("name", "kind");
+
+
 }

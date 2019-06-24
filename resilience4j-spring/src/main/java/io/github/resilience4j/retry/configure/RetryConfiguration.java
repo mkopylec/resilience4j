@@ -15,20 +15,25 @@
  */
 package io.github.resilience4j.retry.configure;
 
-import org.springframework.beans.factory.annotation.Qualifier;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 
 import io.github.resilience4j.consumer.DefaultEventConsumerRegistry;
 import io.github.resilience4j.consumer.EventConsumerRegistry;
-import io.github.resilience4j.retry.AsyncRetry;
-import io.github.resilience4j.retry.AsyncRetryRegistry;
+import io.github.resilience4j.fallback.FallbackDecorators;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
 import io.github.resilience4j.retry.event.RetryEvent;
-import io.github.resilience4j.retry.internal.InMemoryAsyncRetryRegistry;
-import io.github.resilience4j.retry.internal.InMemoryRetryRegistry;
+import io.github.resilience4j.utils.ReactorOnClasspathCondition;
+import io.github.resilience4j.utils.RxJava2OnClasspathCondition;
 
 /**
  * {@link Configuration
@@ -43,48 +48,46 @@ public class RetryConfiguration {
 	 * @return the retry definition registry
 	 */
 	@Bean
-	public RetryRegistry retryRegistry(RetryConfigurationProperties retryConfigurationProperties, @Qualifier("retryEventConsumerRegistry") EventConsumerRegistry<RetryEvent> retryEventConsumerRegistry) {
-		RetryRegistry retryRegistry = new InMemoryRetryRegistry();
-		retryConfigurationProperties.getBackends().forEach(
-				(name, properties) -> {
-					RetryConfig retryConfig = retryConfigurationProperties.createRetryConfig(name);
-					Retry retry = retryRegistry.retry(name, retryConfig);
-					retry.getEventPublisher().onEvent(retryEventConsumerRegistry.createEventConsumer(name, properties.getEventConsumerBufferSize()));
-				}
-		);
-		return retryRegistry;
-	}
+	public RetryRegistry retryRegistry(RetryConfigurationProperties retryConfigurationProperties, EventConsumerRegistry<RetryEvent> retryEventConsumerRegistry) {
 
-	/**
-	 * @param retryConfigurationProperties retryConfigurationProperties retry configuration spring properties
-	 * @param retryEventConsumerRegistry   the event retry registry
-	 * @return the async retry definition registry
-	 */
-	@Bean
-	public AsyncRetryRegistry asyncRetryRegistry(RetryConfigurationProperties retryConfigurationProperties, @Qualifier("asyncRetryEventConsumerRegistry") EventConsumerRegistry<RetryEvent> retryEventConsumerRegistry) {
-		AsyncRetryRegistry retryRegistry = new InMemoryAsyncRetryRegistry();
-		retryConfigurationProperties.getBackends().forEach(
-				(name, properties) -> {
-					RetryConfig retryConfig = retryConfigurationProperties.createRetryConfig(name);
-					AsyncRetry retry = retryRegistry.retry(name, retryConfig);
-					retry.getEventPublisher().onEvent(retryEventConsumerRegistry.createEventConsumer(name, properties.getEventConsumerBufferSize()));
-				}
-		);
+		RetryRegistry retryRegistry = createRetryRegistry(retryConfigurationProperties);
+		registerEventConsumer(retryRegistry, retryEventConsumerRegistry, retryConfigurationProperties);
+		retryConfigurationProperties.getInstances().forEach((name, properties) -> retryRegistry.retry(name, retryConfigurationProperties.createRetryConfig(name)));
 		return retryRegistry;
 	}
 
 
 	/**
-	 * @param retryConfigurationProperties retry configuration spring properties
-	 * @param asyncRetryRegistry           async retry in memory registry
-	 * @return the spring retry AOP aspect
+	 * Initializes a retry registry.
+	 *
+	 * @param retryConfigurationProperties The retry configuration properties.
+	 * @return a RetryRegistry
 	 */
-	@Bean
-	public AsyncRetryAspect asyncRetryAspect(RetryConfigurationProperties retryConfigurationProperties,
-	                                         AsyncRetryRegistry asyncRetryRegistry) {
-		return new AsyncRetryAspect(retryConfigurationProperties, asyncRetryRegistry);
+	private RetryRegistry createRetryRegistry(RetryConfigurationProperties retryConfigurationProperties) {
+		Map<String, RetryConfig> configs = retryConfigurationProperties.getConfigs()
+				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey,
+						entry -> retryConfigurationProperties.createRetryConfig(entry.getValue())));
+
+		return RetryRegistry.of(configs);
 	}
 
+	/**
+	 * Registers the post creation consumer function that registers the consumer events to the retries.
+	 *
+	 * @param retryRegistry         The retry registry.
+	 * @param eventConsumerRegistry The event consumer registry.
+	 */
+	private void registerEventConsumer(RetryRegistry retryRegistry,
+	                                   EventConsumerRegistry<RetryEvent> eventConsumerRegistry, RetryConfigurationProperties retryConfigurationProperties) {
+		retryRegistry.getEventPublisher().onEntryAdded(event -> registerEventConsumer(eventConsumerRegistry, event.getAddedEntry(), retryConfigurationProperties));
+	}
+
+	private void registerEventConsumer(EventConsumerRegistry<RetryEvent> eventConsumerRegistry, Retry retry, RetryConfigurationProperties retryConfigurationProperties) {
+		int eventConsumerBufferSize = Optional.ofNullable(retryConfigurationProperties.getBackendProperties(retry.getName()))
+				.map(io.github.resilience4j.common.retry.configuration.RetryConfigurationProperties.InstanceProperties::getEventConsumerBufferSize)
+				.orElse(100);
+		retry.getEventPublisher().onEvent(eventConsumerRegistry.createEventConsumer(retry.getName(), eventConsumerBufferSize));
+	}
 
 	/**
 	 * @param retryConfigurationProperties retry configuration spring properties
@@ -93,8 +96,21 @@ public class RetryConfiguration {
 	 */
 	@Bean
 	public RetryAspect retryAspect(RetryConfigurationProperties retryConfigurationProperties,
-	                               RetryRegistry retryRegistry) {
-		return new RetryAspect(retryConfigurationProperties, retryRegistry);
+								   RetryRegistry retryRegistry, @Autowired(required = false) List<RetryAspectExt> retryAspectExtList,
+								   FallbackDecorators fallbackDecorators) {
+		return new RetryAspect(retryConfigurationProperties, retryRegistry, retryAspectExtList, fallbackDecorators);
+	}
+
+	@Bean
+	@Conditional(value = {RxJava2OnClasspathCondition.class})
+	public RxJava2RetryAspectExt rxJava2RetryAspectExt() {
+		return new RxJava2RetryAspectExt();
+	}
+
+	@Bean
+	@Conditional(value = {ReactorOnClasspathCondition.class})
+	public ReactorRetryAspectExt reactorRetryAspectExt() {
+		return new ReactorRetryAspectExt();
 	}
 
 	/**
@@ -105,21 +121,8 @@ public class RetryConfiguration {
 	 * @return a default EventConsumerRegistry {@link DefaultEventConsumerRegistry}
 	 */
 	@Bean
-	@Qualifier("syncRetryEventConsumerRegistry")
 	public EventConsumerRegistry<RetryEvent> retryEventConsumerRegistry() {
 		return new DefaultEventConsumerRegistry<>();
 	}
 
-	/**
-	 * The EventConsumerRegistry is used to manage EventConsumer instances.
-	 * The EventConsumerRegistry is used by the Retry events monitor to show the latest Async RetryEvent events
-	 * for each async Retry instance.
-	 *
-	 * @return a default EventConsumerRegistry {@link DefaultEventConsumerRegistry}
-	 */
-	@Bean
-	@Qualifier("asyncRetryEventConsumerRegistry")
-	public EventConsumerRegistry<RetryEvent> asyncRetryEventConsumerRegistry() {
-		return new DefaultEventConsumerRegistry<>();
-	}
 }

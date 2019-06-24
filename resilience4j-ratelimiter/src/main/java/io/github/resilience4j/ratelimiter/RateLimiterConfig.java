@@ -28,16 +28,12 @@ public class RateLimiterConfig {
     private static final Duration ACCEPTABLE_REFRESH_PERIOD = Duration.ofNanos(1L);
 
     private final Duration timeoutDuration;
-    private final long timeoutDurationInNanos;
     private final Duration limitRefreshPeriod;
-    private final long limitRefreshPeriodInNanos;
     private final int limitForPeriod;
 
     private RateLimiterConfig(Duration timeoutDuration, Duration limitRefreshPeriod, int limitForPeriod) {
         this.timeoutDuration = timeoutDuration;
-        this.timeoutDurationInNanos = timeoutDuration.toNanos();
         this.limitRefreshPeriod = limitRefreshPeriod;
-        this.limitRefreshPeriodInNanos = limitRefreshPeriod.toNanos();
         this.limitForPeriod = limitForPeriod;
     }
 
@@ -53,6 +49,7 @@ public class RateLimiterConfig {
     /**
      * Returns a builder to create a custom RateLimiterConfig using specified config as prototype
      *
+     * @param prototype A {@link RateLimiterConfig} prototype.
      * @return a {@link RateLimiterConfig.Builder}
      */
     public static Builder from(RateLimiterConfig prototype) {
@@ -78,14 +75,6 @@ public class RateLimiterConfig {
 
     public int getLimitForPeriod() {
         return limitForPeriod;
-    }
-
-    public long getTimeoutDurationInNanos() {
-        return timeoutDurationInNanos;
-    }
-
-    public long getLimitRefreshPeriodInNanos() {
-        return limitRefreshPeriodInNanos;
     }
 
     @Override public String toString() {

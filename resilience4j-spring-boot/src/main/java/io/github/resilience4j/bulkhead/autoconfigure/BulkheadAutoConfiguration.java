@@ -15,10 +15,6 @@
  */
 package io.github.resilience4j.bulkhead.autoconfigure;
 
-import io.github.resilience4j.bulkhead.Bulkhead;
-import io.github.resilience4j.bulkhead.BulkheadRegistry;
-import io.github.resilience4j.bulkhead.configure.BulkheadConfiguration;
-import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEndpoint;
 import org.springframework.boot.actuate.autoconfigure.EndpointAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -27,19 +23,32 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.bulkhead.ThreadPoolBulkheadRegistry;
+import io.github.resilience4j.bulkhead.event.BulkheadEvent;
+import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEndpoint;
+import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEventsEndpoint;
+import io.github.resilience4j.consumer.EventConsumerRegistry;
+
 /**
  * {@link org.springframework.boot.autoconfigure.EnableAutoConfiguration
  * Auto-configuration} for resilience4j-bulkhead.
  */
 @Configuration
 @ConditionalOnClass(Bulkhead.class)
-@EnableConfigurationProperties(BulkheadProperties.class)
-@Import(BulkheadConfiguration.class)
+@EnableConfigurationProperties({BulkheadProperties.class, ThreadPoolBulkheadProperties.class})
+@Import(BulkheadConfigurationOnMissingBean.class)
 @AutoConfigureBefore(EndpointAutoConfiguration.class)
 public class BulkheadAutoConfiguration {
 
-    @Bean
-    public BulkheadEndpoint bulkheadEndpoint(BulkheadRegistry bulkheadRegistry) {
-        return new BulkheadEndpoint(bulkheadRegistry);
-    }
+	@Bean
+	public BulkheadEndpoint bulkheadEndpoint(BulkheadRegistry bulkheadRegistry, ThreadPoolBulkheadRegistry threadPoolBulkheadRegistry) {
+		return new BulkheadEndpoint(bulkheadRegistry, threadPoolBulkheadRegistry);
+	}
+
+	@Bean
+	public BulkheadEventsEndpoint bulkheadEventsEndpoint(EventConsumerRegistry<BulkheadEvent> eventConsumerRegistry) {
+		return new BulkheadEventsEndpoint(eventConsumerRegistry);
+	}
 }

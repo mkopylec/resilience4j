@@ -18,22 +18,22 @@ package io.github.resilience4j.bulkhead;
 import io.github.resilience4j.bulkhead.autoconfigure.BulkheadProperties;
 import io.github.resilience4j.bulkhead.configure.BulkheadAspect;
 import io.github.resilience4j.bulkhead.event.BulkheadEvent;
-import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEndpointResponse;
-import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEventDTO;
-import io.github.resilience4j.bulkhead.monitoring.endpoint.BulkheadEventsEndpointResponse;
+import io.github.resilience4j.common.bulkhead.monitoring.endpoint.BulkheadEndpointResponse;
+import io.github.resilience4j.common.bulkhead.monitoring.endpoint.BulkheadEventDTO;
+import io.github.resilience4j.common.bulkhead.monitoring.endpoint.BulkheadEventsEndpointResponse;
 import io.github.resilience4j.service.test.BulkheadDummyService;
-import io.github.resilience4j.service.test.DummyService;
 import io.github.resilience4j.service.test.TestApplication;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.Ordered;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
-import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -66,7 +66,7 @@ public class BulkheadAutoConfigurationTest {
      * that the Bulkhead records permitted and rejected calls.
      */
     @Test
-    public void testBulkheadAutoConfiguration() throws IOException {
+    public void testBulkheadAutoConfiguration() {
         ExecutorService es = Executors.newFixedThreadPool(5);
 
         assertThat(bulkheadRegistry).isNotNull();
@@ -84,12 +84,13 @@ public class BulkheadAutoConfigurationTest {
                 .atMost(1, TimeUnit.SECONDS)
                 .until(() -> bulkhead.getMetrics().getAvailableConcurrentCalls() == 0);
 
-        assertThat(bulkhead.getBulkheadConfig().getMaxWaitTime()).isEqualTo(0);
+        assertThat(bulkhead.getBulkheadConfig().getMaxWaitDuration().toMillis()).isEqualTo(0);
         assertThat(bulkhead.getBulkheadConfig().getMaxConcurrentCalls()).isEqualTo(1);
 
+        Callable<Boolean> booleanCallable = () -> bulkhead.getMetrics().getAvailableConcurrentCalls() == 1;
         await()
                 .atMost(2, TimeUnit.SECONDS)
-                .until(() -> bulkhead.getMetrics().getAvailableConcurrentCalls() == 1);
+                .until(booleanCallable);
         // Test Actuator endpoints
 
         ResponseEntity<BulkheadEndpointResponse> bulkheadList = restTemplate.getForEntity("/bulkhead", BulkheadEndpointResponse.class);
@@ -101,7 +102,7 @@ public class BulkheadAutoConfigurationTest {
 
         await()
                 .atMost(2, TimeUnit.SECONDS)
-                .until(() -> bulkhead.getMetrics().getAvailableConcurrentCalls() == 1);
+                .until(booleanCallable);
 
         ResponseEntity<BulkheadEventsEndpointResponse> bulkheadEventList = restTemplate.getForEntity("/bulkhead/events", BulkheadEventsEndpointResponse.class);
         List<BulkheadEventDTO> bulkheadEvents = bulkheadEventList.getBody().getBulkheadEvents();
@@ -110,7 +111,7 @@ public class BulkheadAutoConfigurationTest {
         assertThat(bulkheadEvents).filteredOn(it -> it.getType() == BulkheadEvent.Type.CALL_REJECTED)
                 .isNotEmpty();
 
-        assertThat(bulkheadAspect.getOrder()).isEqualTo(398);
+	    assertThat(bulkheadAspect.getOrder()).isEqualTo(Ordered.LOWEST_PRECEDENCE);
 
         es.shutdown();
     }

@@ -15,30 +15,34 @@
  */
 package io.github.resilience4j.ratelimiter;
 
-import io.github.resilience4j.ratelimiter.autoconfigure.RateLimiterProperties;
-import io.github.resilience4j.ratelimiter.configure.RateLimiterAspect;
-import io.github.resilience4j.ratelimiter.event.RateLimiterEvent;
-import io.github.resilience4j.ratelimiter.monitoring.model.RateLimiterEndpointResponse;
-import io.github.resilience4j.ratelimiter.monitoring.model.RateLimiterEventDTO;
-import io.github.resilience4j.ratelimiter.monitoring.model.RateLimiterEventsEndpointResponse;
-import io.github.resilience4j.service.test.DummyService;
-import io.github.resilience4j.service.test.TestApplication;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import static com.jayway.awaitility.Awaitility.await;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static com.jayway.awaitility.Awaitility.await;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.Ordered;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+
+import io.github.resilience4j.common.ratelimiter.monitoring.endpoint.RateLimiterEndpointResponse;
+import io.github.resilience4j.common.ratelimiter.monitoring.endpoint.RateLimiterEventDTO;
+import io.github.resilience4j.common.ratelimiter.monitoring.endpoint.RateLimiterEventsEndpointResponse;
+import io.github.resilience4j.ratelimiter.autoconfigure.RateLimiterProperties;
+import io.github.resilience4j.ratelimiter.configure.RateLimiterAspect;
+import io.github.resilience4j.ratelimiter.event.RateLimiterEvent;
+import io.github.resilience4j.service.test.DummyService;
+import io.github.resilience4j.service.test.TestApplication;
+import io.prometheus.client.CollectorRegistry;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -61,6 +65,12 @@ public class RateLimiterAutoConfigurationTest {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @BeforeClass
+    public static void setUp() {
+        // Need to clear this static registry out since multiple tests register collectors that could collide.
+        CollectorRegistry.defaultRegistry.clear();
+    }
+
     /**
      * The test verifies that a RateLimiter instance is created and configured properly when the DummyService is invoked and
      * that the RateLimiter records successful and failed calls.
@@ -72,7 +82,7 @@ public class RateLimiterAutoConfigurationTest {
 
         RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter(DummyService.BACKEND);
         assertThat(rateLimiter).isNotNull();
-        rateLimiter.getPermission(Duration.ZERO);
+        rateLimiter.acquirePermission();
         await()
             .atMost(2, TimeUnit.SECONDS)
             .until(() -> rateLimiter.getMetrics().getAvailablePermissions() == 10);
@@ -96,7 +106,7 @@ public class RateLimiterAutoConfigurationTest {
         ResponseEntity<RateLimiterEndpointResponse> rateLimiterList = restTemplate
             .getForEntity("/ratelimiter", RateLimiterEndpointResponse.class);
 
-        assertThat(rateLimiterList.getBody().getRateLimitersNames()).hasSize(2).containsExactly("backendA", "backendB");
+        assertThat(rateLimiterList.getBody().getRateLimiters()).hasSize(2).containsExactly("backendA", "backendB");
 
         try {
             for (int i = 0; i < 11; i++) {
@@ -109,16 +119,16 @@ public class RateLimiterAutoConfigurationTest {
         ResponseEntity<RateLimiterEventsEndpointResponse> rateLimiterEventList = restTemplate
             .getForEntity("/ratelimiter/events", RateLimiterEventsEndpointResponse.class);
 
-        List<RateLimiterEventDTO> eventsList = rateLimiterEventList.getBody().getEventsList();
+        List<RateLimiterEventDTO> eventsList = rateLimiterEventList.getBody().getRateLimiterEvents();
         assertThat(eventsList).isNotEmpty();
         RateLimiterEventDTO lastEvent = eventsList.get(eventsList.size() - 1);
-        assertThat(lastEvent.getRateLimiterEventType()).isEqualTo(RateLimiterEvent.Type.FAILED_ACQUIRE);
+        assertThat(lastEvent.getType()).isEqualTo(RateLimiterEvent.Type.FAILED_ACQUIRE);
 
         await()
             .atMost(2, TimeUnit.SECONDS)
             .until(() -> rateLimiter.getMetrics().getAvailablePermissions() == 10);
 
 
-        assertThat(rateLimiterAspect.getOrder()).isEqualTo(401);
+	    assertThat(rateLimiterAspect.getOrder()).isEqualTo(Ordered.LOWEST_PRECEDENCE - 1);
     }
 }

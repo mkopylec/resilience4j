@@ -41,9 +41,9 @@ public @interface CircuitBreaker {
 	String name();
 
 	/**
-	 * @return the type of circuit breaker (default or webflux which is reactor circuit breaker)
+	 * fallbackMethod method name.
+	 *
+	 * @return fallbackMethod method name.
 	 */
-	ApiType type() default ApiType.DEFAULT;
-
-
+	String fallbackMethod() default "";
 }

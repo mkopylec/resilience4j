@@ -20,10 +20,11 @@ import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.metrics.BulkheadMetrics;
 import org.springframework.boot.actuate.autoconfigure.MetricRepositoryAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.MetricsDropwizardAutoConfiguration;
-import org.springframework.boot.actuate.metrics.repository.MetricRepository;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -32,14 +33,14 @@ import org.springframework.context.annotation.Configuration;
  * Auto-configuration} for resilience4j-metrics.
  */
 @Configuration
-@ConditionalOnClass(MetricRepository.class)
-@AutoConfigureAfter(value = {BulkheadMetricsAutoConfiguration.class, MetricsDropwizardAutoConfiguration.class})
+@ConditionalOnClass(MetricRegistry.class)
+@AutoConfigureAfter(value = {MetricsDropwizardAutoConfiguration.class})
 @AutoConfigureBefore(MetricRepositoryAutoConfiguration.class)
+@ConditionalOnProperty(value = "resilience4j.bulkhead.metrics.enabled", matchIfMissing = true)
 public class BulkheadMetricsAutoConfiguration {
-    @Bean
-    public BulkheadMetrics registerBulkheadMetrics(BulkheadRegistry bulkheadRegistry, MetricRegistry metricRegistry){
-        BulkheadMetrics bulkheadMetrics = BulkheadMetrics.ofBulkheadRegistry(bulkheadRegistry);
-        metricRegistry.registerAll(bulkheadMetrics);
-        return bulkheadMetrics;
-    }
+	@Bean
+	@ConditionalOnMissingBean
+	public BulkheadMetrics registerBulkheadMetrics(BulkheadRegistry bulkheadRegistry, MetricRegistry metricRegistry) {
+		return BulkheadMetrics.ofBulkheadRegistry(bulkheadRegistry, metricRegistry);
+	}
 }

@@ -15,123 +15,25 @@
  */
 package io.github.resilience4j.bulkhead.configure;
 
-import io.github.resilience4j.bulkhead.Bulkhead;
-import io.github.resilience4j.bulkhead.BulkheadConfig;
+import org.springframework.core.Ordered;
 
-import javax.validation.constraints.Min;
-import java.util.HashMap;
-import java.util.Map;
+public class BulkheadConfigurationProperties extends io.github.resilience4j.common.bulkhead.configuration.BulkheadConfigurationProperties {
+	private int bulkheadAspectOrder = Ordered.LOWEST_PRECEDENCE;
 
-import static io.github.resilience4j.bulkhead.BulkheadConfig.Builder;
-import static io.github.resilience4j.bulkhead.BulkheadConfig.custom;
+	/**
+	 * @deprecated As of release 0.16.0 as we set an implicit spring aspect order now which is retry then circuit breaker then rate limiter then bulkhead
+	 */
+	@Deprecated
+	public int getBulkheadAspectOrder() {
+		return bulkheadAspectOrder;
+	}
 
-public class BulkheadConfigurationProperties {
-    /*
-    This property gives you control over Bulkhead aspect application order.
-    By default Bulkhead will be executed BEFORE CircuitBreaker and RateLimiter.
-    By adjusting each aspect order from ConfigurationProperties
-    you explicitly define aspects execution sequence.
-    */
-    private int bulkheadAspectOrder = Integer.MAX_VALUE - 2;
-    private Map<String, BackendProperties> backends = new HashMap<>();
+	/**
+	 * @deprecated As of release 0.16.0 as we set an implicit spring aspect order now which is retry then circuit breaker then rate limiter then bulkhead
+	 */
+	@Deprecated
+	public void setBulkheadAspectOrder(int bulkheadAspectOrder) {
+		// NO-OP
+	}
 
-    public int getBulkheadAspectOrder() {
-        return bulkheadAspectOrder;
-    }
-
-    public void setBulkheadAspectOrder(int bulkheadAspectOrder) {
-        this.bulkheadAspectOrder = bulkheadAspectOrder;
-    }
-
-    private BackendProperties getBackendProperties(String backend) {
-        return backends.get(backend);
-    }
-
-    public BulkheadConfig createBulkheadConfig(String backend) {
-        return createBulkheadConfig(getBackendProperties(backend));
-    }
-
-    private BulkheadConfig createBulkheadConfig(BackendProperties backendProperties) {
-        return buildBulkheadConfig(backendProperties).build();
-    }
-
-    public Builder buildBulkheadConfig(BackendProperties properties) {
-        if (properties == null) {
-            return new Builder();
-        }
-
-        Builder builder = custom();
-
-        if (properties.getMaxConcurrentCall() != null) {
-            builder.maxConcurrentCalls(properties.getMaxConcurrentCall());
-        }
-
-        if (properties.getMaxWaitTime() != null) {
-            builder.maxWaitTime(properties.getMaxWaitTime());
-        }
-
-        return builder;
-    }
-
-    public Map<String, BackendProperties> getBackends() {
-        return backends;
-    }
-
-    /**
-     * Class storing property values for configuring {@link Bulkhead} instances.
-     */
-    public static class BackendProperties {
-        @Min(1)
-        private Integer maxConcurrentCall;
-
-        @Min(0)
-        private Long maxWaitTime;
-
-        @Min(1)
-        private Integer eventConsumerBufferSize = 100;
-
-        /**
-         * Returns the max concurrent call of the bulkhead.
-         *
-         * @return the max concurrent call
-         */
-        public Integer getMaxConcurrentCall() {
-            return maxConcurrentCall;
-        }
-
-        /**
-         * Sets the max concurrent call of the bulkhead.
-         *
-         * @param maxConcurrentCall the max concurrent call
-         */
-        public void setMaxConcurrentCall(Integer maxConcurrentCall) {
-            this.maxConcurrentCall = maxConcurrentCall;
-        }
-
-        /**
-         * Returns the max wait time for the bulkhead in milliseconds.
-         *
-         * @return the failure rate threshold
-         */
-        public Long getMaxWaitTime() {
-            return maxWaitTime;
-        }
-
-        /**
-         * Sets the max wait time for the bulkhead in milliseconds.
-         *
-         * @param maxWaitTime the max wait time
-         */
-        public void setMaxWaitTime(Long maxWaitTime) {
-            this.maxWaitTime = maxWaitTime;
-        }
-
-        public Integer getEventConsumerBufferSize() {
-            return eventConsumerBufferSize;
-        }
-
-        public void setEventConsumerBufferSize(Integer eventConsumerBufferSize) {
-            this.eventConsumerBufferSize = eventConsumerBufferSize;
-        }
-    }
 }

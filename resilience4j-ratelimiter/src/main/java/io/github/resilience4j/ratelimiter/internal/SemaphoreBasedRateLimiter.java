@@ -18,6 +18,7 @@
  */
 package io.github.resilience4j.ratelimiter.internal;
 
+import io.github.resilience4j.core.lang.Nullable;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.event.RateLimiterOnFailureEvent;
@@ -36,13 +37,12 @@ import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 
 /**
  * A RateLimiter implementation that consists of {@link Semaphore}
- * and scheduler that will refresh permissions
- * after each {@link RateLimiterConfig#limitRefreshPeriod}.
+ * and scheduler that will refresh permissions after each {@link RateLimiterConfig#getLimitRefreshPeriod()}.
  */
 public class SemaphoreBasedRateLimiter implements RateLimiter {
 
     private static final String NAME_MUST_NOT_BE_NULL = "Name must not be null";
-    private static final String CONFIG_MUST_NOT_BE_NULL = "RateLimiterConfig must not be null";
+    private static final String CONFIG_MUST_NOT_BE_NULL = "Config must not be null";
 
     private final String name;
     private final AtomicReference<RateLimiterConfig> rateLimiterConfig;
@@ -69,7 +69,7 @@ public class SemaphoreBasedRateLimiter implements RateLimiter {
      * @param scheduler         executor that will refresh permissions
      */
     public SemaphoreBasedRateLimiter(String name, RateLimiterConfig rateLimiterConfig,
-                                     ScheduledExecutorService scheduler) {
+                                     @Nullable ScheduledExecutorService scheduler) {
         this.name = requireNonNull(name, NAME_MUST_NOT_BE_NULL);
         this.rateLimiterConfig = new AtomicReference<>(requireNonNull(rateLimiterConfig, CONFIG_MUST_NOT_BE_NULL));
 
@@ -94,8 +94,8 @@ public class SemaphoreBasedRateLimiter implements RateLimiter {
     private void scheduleLimitRefresh() {
         scheduler.scheduleAtFixedRate(
             this::refreshLimit,
-            this.rateLimiterConfig.get().getLimitRefreshPeriodInNanos(),
-            this.rateLimiterConfig.get().getLimitRefreshPeriodInNanos(),
+            this.rateLimiterConfig.get().getLimitRefreshPeriod().toNanos(),
+            this.rateLimiterConfig.get().getLimitRefreshPeriod().toNanos(),
             TimeUnit.NANOSECONDS
         );
     }
@@ -131,7 +131,12 @@ public class SemaphoreBasedRateLimiter implements RateLimiter {
      * {@inheritDoc}
      */
     @Override
-    public boolean getPermission(final Duration timeoutDuration) {
+    public boolean getPermission(Duration timeoutDuration) {
+        return acquirePermission(timeoutDuration);
+    }
+
+    @Override
+    public boolean acquirePermission(Duration timeoutDuration) {
         try {
             boolean success = semaphore.tryAcquire(timeoutDuration.toNanos(), TimeUnit.NANOSECONDS);
             publishRateLimiterEvent(success);
@@ -143,6 +148,11 @@ public class SemaphoreBasedRateLimiter implements RateLimiter {
         }
     }
 
+    @Override
+    public boolean acquirePermission() {
+        return acquirePermission(rateLimiterConfig.get().getTimeoutDuration());
+    }
+
     /**
      * {@inheritDoc}
      * SemaphoreBasedRateLimiter is totally blocking by it's nature. So this non-blocking API isn't supported.
@@ -150,6 +160,16 @@ public class SemaphoreBasedRateLimiter implements RateLimiter {
      */
     @Override
     public long reservePermission(Duration timeoutDuration) {
+        return -1;
+    }
+
+    /**
+     * {@inheritDoc}
+     * SemaphoreBasedRateLimiter is totally blocking by it's nature. So this non-blocking API isn't supported.
+     * It will return negative numbers all the time.
+     */
+    @Override
+    public long reservePermission() {
         return -1;
     }
 
