@@ -64,7 +64,9 @@ public class CircuitBreakerTransformer<T> extends AbstractTransformer<T> {
                     @Override
                     public void success(T value) {
                         long durationInNanos = System.nanoTime() - start;
-                        circuitBreaker.onSuccess(durationInNanos);
+                        if (!circuitBreaker.onResult(durationInNanos, value)) {
+                            circuitBreaker.onSuccess(durationInNanos);
+                        }
                         down.success(value);
                     }
 

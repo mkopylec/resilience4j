@@ -62,6 +62,11 @@ class FlowableRateLimiter<T> extends Flowable<T> {
         }
 
         @Override
+        public void hookOnNext(T value) {
+            // NoOp
+        }
+
+        @Override
         public void hookOnError(Throwable t) {
             // NoOp
         }

@@ -58,6 +58,11 @@ class ObserverRateLimiter<T> extends Observable<T> {
         }
 
         @Override
+        protected void hookOnNext(T item) {
+            // NoOp
+        }
+
+        @Override
         protected void hookOnError(Throwable e) {
             // NoOp
         }

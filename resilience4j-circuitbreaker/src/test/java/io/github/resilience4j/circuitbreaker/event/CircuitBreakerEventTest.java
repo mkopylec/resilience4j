@@ -53,6 +53,28 @@ public class CircuitBreakerEventTest {
     }
 
     @Test
+    public void testCircuitBreakerOnInvalidResultEvent() {
+        CircuitBreakerOnInvalidResultEvent circuitBreakerEvent = new CircuitBreakerOnInvalidResultEvent("test",
+                Duration.ofSeconds(1), "invalid result");
+        assertThat(circuitBreakerEvent.getCircuitBreakerName()).isEqualTo("test");
+        assertThat(circuitBreakerEvent.getElapsedDuration().getSeconds()).isEqualTo(1);
+        assertThat(circuitBreakerEvent.getResult()).isEqualTo("invalid result");
+        assertThat(circuitBreakerEvent.getEventType()).isEqualTo(Type.INVALID_RESULT);
+        assertThat(circuitBreakerEvent.toString()).contains("CircuitBreaker 'test' recorded an invalid result: 'invalid result'");
+    }
+
+    @Test
+    public void testCircuitBreakerOnValidResultEvent() {
+        CircuitBreakerOnValidResultEvent circuitBreakerEvent = new CircuitBreakerOnValidResultEvent("test",
+                Duration.ofSeconds(1), "valid result");
+        assertThat(circuitBreakerEvent.getCircuitBreakerName()).isEqualTo("test");
+        assertThat(circuitBreakerEvent.getElapsedDuration().getSeconds()).isEqualTo(1);
+        assertThat(circuitBreakerEvent.getResult()).isEqualTo("valid result");
+        assertThat(circuitBreakerEvent.getEventType()).isEqualTo(Type.VALID_RESULT);
+        assertThat(circuitBreakerEvent.toString()).contains("CircuitBreaker 'test' recorded a valid result: 'valid result'");
+    }
+
+    @Test
     public void testCircuitBreakerOnStateTransitionEvent() {
         CircuitBreakerOnStateTransitionEvent circuitBreakerEvent = new CircuitBreakerOnStateTransitionEvent("test",
                 StateTransition.CLOSED_TO_OPEN);

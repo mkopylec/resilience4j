@@ -114,7 +114,9 @@ public class CircuitBreakerMethodInterceptor extends AbstractMethodInterceptor {
                             breaker.onError(durationInNanos, t);
                             completeFailedFuture(t, fallbackMethod, promise);
                         } else {
-                            breaker.onSuccess(durationInNanos);
+                            if (!breaker.onResult(durationInNanos, v)) {
+                                breaker.onSuccess(durationInNanos);
+                            }
                             promise.complete(v);
                         }
                     });

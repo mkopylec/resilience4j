@@ -54,7 +54,11 @@ public interface CircuitBreakerEvent {
         ERROR(false),
         /** A CircuitBreakerEvent which informs that an error has been ignored */
         IGNORED_ERROR(false),
+        /** A CircuitBreakerEvent which informs that an invalid result has been recorded */
+        INVALID_RESULT(false),
         /** A CircuitBreakerEvent which informs that a success has been recorded */
+        VALID_RESULT(false),
+        /** A CircuitBreakerEvent which informs that a valid result has been recorded */
         SUCCESS(false),
         /** A CircuitBreakerEvent which informs that a call was not permitted because the CircuitBreaker state is OPEN */
         NOT_PERMITTED(false),

@@ -182,6 +182,20 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
     }
 
     @Override
+    public <T> boolean onResult(long durationInNanos, T result) {
+        Predicate<T> recordInvalidResultPredicate = circuitBreakerConfig.getRecordInvalidResultPredicate();
+        if (recordInvalidResultPredicate.test(result)) {
+            LOG.debug("CircuitBreaker '{}' recorded an invalid result: {}", name, result);
+            publishCircuitInvalidResultEvent(name, durationInNanos, result);
+            stateReference.get().onInvalidResult(result);
+            return true;
+        } else {
+            publishCircuitValidResultEvent(name, durationInNanos, result);
+            return false;
+        }
+    }
+
+    @Override
     public void onSuccess(long durationInNanos) {
         publishSuccessEvent(durationInNanos);
         stateReference.get().onSuccess();
@@ -318,6 +332,16 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         publishEventIfPossible(event);
     }
 
+    private void publishCircuitInvalidResultEvent(final String name, final long durationInNanos, final Object result) {
+        final CircuitBreakerOnInvalidResultEvent event = new CircuitBreakerOnInvalidResultEvent(name, Duration.ofNanos(durationInNanos), result);
+        publishEventIfPossible(event);
+    }
+
+    private void publishCircuitValidResultEvent(final String name, final long durationInNanos, final Object result) {
+        final CircuitBreakerOnValidResultEvent event = new CircuitBreakerOnValidResultEvent(name, Duration.ofNanos(durationInNanos), result);
+        publishEventIfPossible(event);
+    }
+
     private void publishCircuitErrorEvent(final String name, final long durationInNanos, final Throwable throwable) {
         final CircuitBreakerOnErrorEvent event = new CircuitBreakerOnErrorEvent(name, Duration.ofNanos(durationInNanos), throwable);
         publishEventIfPossible(event);
@@ -424,6 +448,11 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         }
 
         @Override
+        public <T> void onInvalidResult(T result) {
+            checkFailureRate(circuitBreakerMetrics.onError());
+        }
+
+        @Override
         public void onSuccess() {
             // CircuitBreakerMetrics is thread-safe
             checkFailureRate(circuitBreakerMetrics.onSuccess());
@@ -515,6 +544,11 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
             circuitBreakerMetrics.onError();
         }
 
+        @Override
+        public <T> void onInvalidResult(T result) {
+            circuitBreakerMetrics.onError();
+        }
+
         /**
          * Should never be called when tryAcquirePermission returns false.
          */
@@ -579,6 +613,10 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         }
 
         @Override
+        public <T> void onInvalidResult(T result) {
+        }
+
+        @Override
         public void onSuccess() {
             // noOp
         }
@@ -637,6 +675,10 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         @Override
         public void onError(Throwable throwable) {
             // noOp
+        }
+
+        @Override
+        public <T> void onInvalidResult(T result) {
         }
 
         /**
@@ -710,6 +752,11 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         }
 
         @Override
+        public <T> void onInvalidResult(T result) {
+            checkFailureRate(circuitBreakerMetrics.onError());
+        }
+
+        @Override
         public void onSuccess() {
             // CircuitBreakerMetrics is thread-safe
             checkFailureRate(circuitBreakerMetrics.onSuccess());
@@ -755,6 +802,8 @@ public final class CircuitBreakerStateMachine implements CircuitBreaker {
         void releasePermission();
 
         void onError(Throwable throwable);
+
+        <T> void onInvalidResult(T result);
 
         void onSuccess();
 

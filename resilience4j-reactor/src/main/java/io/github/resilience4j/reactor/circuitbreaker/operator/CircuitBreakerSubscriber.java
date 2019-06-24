@@ -54,8 +54,11 @@ class CircuitBreakerSubscriber<T> extends AbstractSubscriber<T> {
     @Override
     protected void hookOnNext(T value) {
         if (!isDisposed()) {
-            if (singleProducer && SUCCESS_SIGNALED.compareAndSet(this, 0, 1)) {
-                circuitBreaker.onSuccess(stopWatch.stop().toNanos());
+            if (singleProducer && SUCCESS_SIGNALED.compareAndSet(this, 0, 1)) { // TODO singleProducer is false for Flux
+                long durationInNanos = stopWatch.stop().toNanos();
+                if (!circuitBreaker.onResult(durationInNanos, value)) {
+                    circuitBreaker.onSuccess(durationInNanos);
+                }
             }
 
             downstreamSubscriber.onNext(value);

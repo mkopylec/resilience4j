@@ -31,6 +31,7 @@ public class SingleCircuitBreakerTest extends BaseCircuitBreakerTest {
         verify(circuitBreaker, times(1)).onSuccess(anyLong());
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
     }
+    // TODO onResult tests
 
     @Test
     public void shouldSubscribeToMonoFromCallableMultipleTimes() {

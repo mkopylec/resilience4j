@@ -39,12 +39,13 @@ public class CircuitBreakerStateMachineTest {
     @Before
     public void setUp() {
         mockClock = MockClock.at(2019, 1, 1, 12, 0, 0, ZoneId.of("UTC"));
-        circuitBreaker = new CircuitBreakerStateMachine("testName", CircuitBreakerConfig.custom()
+        circuitBreaker = new CircuitBreakerStateMachine("testName", CircuitBreakerConfig.<String>custom()
                 .failureRateThreshold(50)
                 .ringBufferSizeInClosedState(5)
                 .ringBufferSizeInHalfOpenState(4)
                 .waitDurationInOpenState(Duration.ofSeconds(5))
                 .recordFailure(error -> !(error instanceof NumberFormatException))
+                .recordInvalidResult(result -> result.equals("invalid result"))
                 .build(), mockClock);
     }
 
@@ -132,7 +133,7 @@ public class CircuitBreakerStateMachineTest {
 
         // Call 2 is a failure
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
-        circuitBreaker.onError(0, new RuntimeException()); // Should create a CircuitBreakerOnErrorEvent
+        circuitBreaker.onResult(0, "invalid result"); // Should create a CircuitBreakerOnInvalidResultEvent
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
         assertCircuitBreakerMetricsEqualTo(-1f, 0, 2, 5, 2, 0L);
 
@@ -144,6 +145,7 @@ public class CircuitBreakerStateMachineTest {
 
         // Call 4 is a success
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
+        circuitBreaker.onResult(0, "valid result"); // Should create a CircuitBreakerOnValidResultEvent
         circuitBreaker.onSuccess(0); // Should create a CircuitBreakerOnSuccessEvent
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
         assertCircuitBreakerMetricsEqualTo(-1f, 1, 4, 5, 3, 0L);
@@ -204,11 +206,11 @@ public class CircuitBreakerStateMachineTest {
 
         // Call 2 is a failure
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
-        circuitBreaker.onError(0, new RuntimeException()); // Should create a CircuitBreakerOnErrorEvent
+        circuitBreaker.onResult(0, "invalid result"); // Should create a CircuitBreakerOnInvalidResultEvent
         // Call 3 is a success
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
         circuitBreaker.onSuccess(0); // Should create a CircuitBreakerOnSuccessEvent (12)
-        // Call 2 is a failure
+        // Call 4 is a failure
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
         circuitBreaker.onError(0, new RuntimeException()); // Should create a CircuitBreakerOnErrorEvent
 
@@ -285,13 +287,13 @@ public class CircuitBreakerStateMachineTest {
         circuitBreaker.onError(0, new RuntimeException()); // Should not create a CircuitBreakerOnErrorEvent
 
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
-        circuitBreaker.onError(0, new RuntimeException()); // Should not create a CircuitBreakerOnErrorEvent
+        circuitBreaker.onResult(0, "invalid result"); // Should create a CircuitBreakerOnInvalidResultEvent
 
         assertThat(circuitBreaker.tryAcquirePermission()).isEqualTo(true);
         circuitBreaker.onError(0, new RuntimeException()); // Should not create a CircuitBreakerOnErrorEvent
 
         circuitBreaker.acquirePermission();
-        circuitBreaker.onError(0, new RuntimeException()); // Should not create a CircuitBreakerOnErrorEvent
+        circuitBreaker.onResult(0, "invalid result"); // Should create a CircuitBreakerOnInvalidResultEvent
 
         assertThatMetricsAreReset();
     }

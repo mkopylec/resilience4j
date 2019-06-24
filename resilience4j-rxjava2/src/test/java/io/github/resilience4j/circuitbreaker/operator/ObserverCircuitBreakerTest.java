@@ -25,9 +25,10 @@ public class ObserverCircuitBreakerTest extends BaseCircuitBreakerTest {
             .test()
             .assertResult("Event 1", "Event 2");
 
-        verify(circuitBreaker, times(1)).onSuccess(anyLong());
+        verify(circuitBreaker, times(3)).onSuccess(anyLong());
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
     }
+    // TODO onResult tests
 
     @Test
     public void shouldPropagateError() {

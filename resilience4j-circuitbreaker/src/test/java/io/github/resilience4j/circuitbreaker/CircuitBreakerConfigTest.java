@@ -28,7 +28,8 @@ import static org.assertj.core.api.Java6Assertions.assertThat;
 
 public class CircuitBreakerConfigTest {
 
-    private static final Predicate<Throwable> TEST_PREDICATE = e -> "test".equals(e.getMessage());
+    private static final Predicate<Throwable> ERROR_PREDICATE = e -> "test".equals(e.getMessage());
+    private static final Predicate<String> RESULT_PREDICATE = "fail"::equals;
 
     @Test(expected = IllegalArgumentException.class)
     public void zeroMaxFailuresShouldFail() {
@@ -103,12 +104,19 @@ public class CircuitBreakerConfigTest {
     @Test
     public void shouldUseRecordFailureThrowablePredicate() {
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
-                .recordFailure(TEST_PREDICATE).build();
+                .recordFailure(ERROR_PREDICATE).build();
         then(circuitBreakerConfig.getRecordFailurePredicate().test(new Error("test"))).isEqualTo(true);
         then(circuitBreakerConfig.getRecordFailurePredicate().test(new Error("fail"))).isEqualTo(false);
         then(circuitBreakerConfig.getRecordFailurePredicate().test(new RuntimeException("test"))).isEqualTo(true);
         then(circuitBreakerConfig.getRecordFailurePredicate().test(new Error())).isEqualTo(false);
         then(circuitBreakerConfig.getRecordFailurePredicate().test(new RuntimeException())).isEqualTo(false);
+    }
+    @Test
+    public void shouldUseRecordInvalidResultPredicate() {
+        CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.<String>custom()
+                .recordInvalidResult(RESULT_PREDICATE).build();
+        then(circuitBreakerConfig.getRecordInvalidResultPredicate().test("test")).isEqualTo(false);
+        then(circuitBreakerConfig.getRecordInvalidResultPredicate().test("fail")).isEqualTo(true);
     }
 
     private static class ExtendsException extends Exception {
@@ -167,7 +175,7 @@ public class CircuitBreakerConfigTest {
     @Test
     public void shouldUseBothRecordToBuildPredicate() {
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
-                .recordFailure(TEST_PREDICATE) //1
+                .recordFailure(ERROR_PREDICATE) //1
                 .recordExceptions(RuntimeException.class, ExtendsExtendsException.class) //2
                 .ignoreExceptions(ExtendsException.class, ExtendsRuntimeException.class) //3
                 .build();

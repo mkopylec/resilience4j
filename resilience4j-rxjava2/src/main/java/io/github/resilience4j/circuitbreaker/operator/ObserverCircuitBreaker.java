@@ -52,6 +52,14 @@ class ObserverCircuitBreaker<T> extends Observable<T> {
         }
 
         @Override
+        protected void hookOnNext(T item) {
+            long durationInNanos = stopWatch.stop().toNanos();
+            if (!circuitBreaker.onResult(durationInNanos, item)) {
+                circuitBreaker.onSuccess(durationInNanos);
+            }
+        }
+
+        @Override
         protected void hookOnError(Throwable e) {
             circuitBreaker.onError(stopWatch.stop().toNanos(), e);
         }

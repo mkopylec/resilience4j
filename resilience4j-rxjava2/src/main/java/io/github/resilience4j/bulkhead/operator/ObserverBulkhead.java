@@ -48,6 +48,11 @@ class ObserverBulkhead<T> extends Observable<T> {
         }
 
         @Override
+        protected void hookOnNext(T item) {
+            // noOp
+        }
+
+        @Override
         protected void hookOnError(Throwable e) {
             bulkhead.onComplete();
         }

@@ -19,6 +19,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -51,6 +52,8 @@ public class FluxCircuitBreakerTest {
                 .verifyComplete();
 
         verify(circuitBreaker, times(1)).onSuccess(anyLong());
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Event 1"));
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Event 2"));
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
     }
 
@@ -65,7 +68,26 @@ public class FluxCircuitBreakerTest {
                 .verify(Duration.ofSeconds(1));
 
         verify(circuitBreaker, times(1)).onError(anyLong(), any(IOException.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
+    }
+
+    @Test
+    public void shouldPropagateInvalidResult() {
+        given(circuitBreaker.tryAcquirePermission()).willReturn(true);
+        given(circuitBreaker.onResult(anyLong(), anyString())).willReturn(true);
+
+        StepVerifier.create(
+                Flux.just("Event 1", "Event 2")
+                        .compose(CircuitBreakerOperator.of(circuitBreaker)))
+                .expectNext("Event 1")
+                .expectNext("Event 2")
+                .verifyComplete();
+
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Event 1"));
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Event 2"));
+        verify(circuitBreaker, never()).onSuccess(anyLong());
+        verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
     }
 
     @Test
@@ -79,6 +101,7 @@ public class FluxCircuitBreakerTest {
                 .verify(Duration.ofSeconds(1));
 
         verify(circuitBreaker, times(1)).onError(anyLong(), any(IOException.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
     }
 
@@ -92,6 +115,8 @@ public class FluxCircuitBreakerTest {
                 .expectNext("Bla Event 2")
                 .verifyComplete();
 
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Bla Event 1"));
+        verify(circuitBreaker, times(1)).onResult(anyLong(), eq("Bla Event 2"));
         verify(circuitBreaker, times(2)).onSuccess(anyLong());
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
     }
@@ -107,6 +132,7 @@ public class FluxCircuitBreakerTest {
                 .verify(Duration.ofSeconds(1));
 
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
     }
 
@@ -121,6 +147,7 @@ public class FluxCircuitBreakerTest {
                 .verify(Duration.ofSeconds(1));
 
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
     }
 
@@ -135,6 +162,7 @@ public class FluxCircuitBreakerTest {
                 .verify(Duration.ofSeconds(1));
 
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
     }
 
@@ -152,6 +180,7 @@ public class FluxCircuitBreakerTest {
 
         verify(circuitBreaker, times(1)).releasePermission();
         verify(circuitBreaker, never()).onError(anyLong(), any(Throwable.class));
+        verify(circuitBreaker, never()).onResult(anyLong(), anyString());
         verify(circuitBreaker, never()).onSuccess(anyLong());
     }
 }

@@ -29,7 +29,9 @@ suspend fun <T> CircuitBreaker.executeSuspendFunction(block: suspend () -> T): T
     try {
         val result = block()
         val durationInNanos = System.nanoTime() - start
-        onSuccess(durationInNanos)
+        if (!onResult(durationInNanos, result)) {
+            onSuccess(durationInNanos)
+        }
         return result
     } catch (exception: Exception) {
         val durationInNanos = System.nanoTime() - start

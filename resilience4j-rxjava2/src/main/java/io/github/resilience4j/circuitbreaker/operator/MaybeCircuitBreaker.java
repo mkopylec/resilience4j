@@ -63,8 +63,11 @@ class MaybeCircuitBreaker<T> extends Maybe<T> {
         }
 
         @Override
-        protected void hookOnSuccess() {
-            circuitBreaker.onSuccess(stopWatch.stop().toNanos());
+        protected void hookOnSuccess(T value) {
+            long durationInNanos = stopWatch.stop().toNanos();
+            if (!circuitBreaker.onResult(durationInNanos, value)) {
+                circuitBreaker.onSuccess(durationInNanos);
+            }
         }
 
         @Override

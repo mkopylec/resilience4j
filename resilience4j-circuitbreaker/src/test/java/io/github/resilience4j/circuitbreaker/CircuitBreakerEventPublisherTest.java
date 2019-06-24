@@ -121,6 +121,8 @@ public class CircuitBreakerEventPublisherTest {
         then(logger).should(times(1)).info("NOT_PERMITTED");
     }
 
+
+    // TODO Tests
     @Test
     public void shouldNotProduceEventsInDisabledState() {
         //Given

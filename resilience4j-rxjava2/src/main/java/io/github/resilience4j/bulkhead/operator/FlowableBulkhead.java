@@ -54,6 +54,11 @@ class FlowableBulkhead<T> extends Flowable<T> {
         }
 
         @Override
+        public void hookOnNext(T value) {
+            // noOp
+        }
+
+        @Override
         public void hookOnError(Throwable t) {
             bulkhead.onComplete();
         }

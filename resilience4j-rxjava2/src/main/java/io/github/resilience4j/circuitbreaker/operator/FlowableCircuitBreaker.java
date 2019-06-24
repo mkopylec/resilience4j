@@ -58,6 +58,14 @@ class FlowableCircuitBreaker<T> extends Flowable<T> {
         }
 
         @Override
+        public void hookOnNext(T value) {
+            long durationInNanos = stopWatch.stop().toNanos();
+            if (!circuitBreaker.onResult(durationInNanos, value)) {
+                circuitBreaker.onSuccess(durationInNanos);
+            }
+        }
+
+        @Override
         public void hookOnError(Throwable t) {
             circuitBreaker.onError(stopWatch.stop().toNanos(), t);
         }

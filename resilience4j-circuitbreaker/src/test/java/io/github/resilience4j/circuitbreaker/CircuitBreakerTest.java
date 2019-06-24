@@ -509,6 +509,8 @@ public class CircuitBreakerTest {
         assertThat(metrics.getNumberOfSuccessfulCalls()).isEqualTo(0);
     }
 
+
+    // TODO Replace some onError calls with onResult calls
     @Test
     public void shouldReturnFailureWithCircuitBreakerOpenException() {
         // Given
